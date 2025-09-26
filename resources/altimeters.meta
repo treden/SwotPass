@@ -1,0 +1,33 @@
+#
+# --- ALTIMETERS CARACTERISTICS ---
+#
+# For each altimetric mission, this file give :
+#  - short_name
+#  - full_name
+#  - start_date_cycle_1 (from ftp://podaac.jpl.nasa.gov/allData/[mission]/[...]/docs/*.txt)
+#  - end_of_mission
+#  - repeatability (day)
+#  - cycle_min
+#  - cycle_max
+#  - nominal_track_filename (from http://ctoh.legos.obs-mip.fr/altimetry/*.csv)
+#  - and constructed from L2 SSH SWOT products for swot orbit (Jan. 2024, YTT)
+#
+#2023-09-06 23:58:31
+short_name,     full_name,                      start_date_cycle_min,   end_of_mission,         repeatability,  cycle_min,  cycle_max,  nominal_track_filename
+tp,             TOPEX-POSEIDON,                 1992-09-23 03:38:15,    2002-08-11 10:41:01,    9.91564226,     001,        365,        "tp.csv"
+tpi,            TOPEX-POSEIDON (Interleaved),   2002-09-20 02:40:50,    2005-10-04 15:55:38,    9.91564226,     369,        481,        "tp_interlaced.csv"
+j1,             JASON-1,                        2002-01-15 05:10:51,    2009-01-16 10:51:11,    9.91564226,     001,        259,        "tp.csv"
+j1i,            JASON-1 (Interleaved),          2009-02-20 03:50:58,    2012-03-06 17:06:15,    9.91564226,     263,        375,        "tp_interlaced.csv"
+j2,             JASON-2,                        2008-07-12 01:20:05,    2017-05-17 22:25:10,    9.91564226,     001,        327,        "tp.csv"
+j2i,            JASON-2 (Interleaved),          2017-07-20 01:27:24,    NaT,                    9.91564226,     501,        NaN,        "tp_interlaced.csv"
+j3,             JASON-3,                        2016-02-17 10:28:45,    NaT,                    9.91564226,     001,        NaN,        "tp.csv"
+ers1,           ERS-1,                          1991-06-21 21:34:20,    2000-03-31 00:00:00,    35.0,           001,        365,        "en.csv"
+ers2,           ERS-2,                          1995-05-15 22:04:27,    2011-06-07 00:00:00,    35.0,           001,        259,        "en.csv"
+en,             ENVISAT,                        2001-11-19 21:34:20,    2012-08-06 00:00:00,    35.0,           001,        115,        "en.csv"
+sa,             SARAL-ALTIKA,                   2013-03-14 05:39:27,    NaT,                    35.0,           001,        035,        "en.csv"
+s3a,            SENTINEL-3A,                    2016-03-12 21:37:30,    NaT,                    27.0,           002,        NaN,        "s3a_cycle06_dtsec.csv"
+s3a2,           SENTINEL-3A (Test),             2016-03-12 21:37:30,    NaT,                    27.0,           002,        NaN,        "s3a_rel_orbit.csv"
+s3b,            SENTINEL-3B,                    2018-12-16 21:39:03,    NaT,                    27.0,           020,        NaN,        "s3b_cycle20_dtsec.csv"
+sw,             SWOT,                           2023-07-21 05:34:38,    NaT,                    20.86455,       001,        NaN,        "new_swot_science_orbit.csv"
+swi,            SWOT-CALVAL,                    2021-09-16 00:00:00,    NaT,                    0.99349,        NaN,        NaN,        "swot_calval_orbit.csv"
+cfo,            CFOSAT,                         2018-10-29 00:00:00,    NaT,                    13.0,           NaN,        NaN,        "cfosat.csv"
