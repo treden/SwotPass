@@ -21,7 +21,7 @@ import logging
 import os
 
 # Define the resources path
-resources = f'{os.path.dirname(os.path.realpath(__file__))}/resources'
+resources = f'{os.path.dirname(os.path.realpath(__file__))}/../resources'
 metadata_file = f'{resources}/altimeters.meta'
 
 # Define data types for metadata CSV columns

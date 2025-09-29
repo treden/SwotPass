@@ -5,7 +5,7 @@ from shapely.geometry import LineString, Point
 from shapely.ops import nearest_points
 # from scipy.interpolate import griddata
 
-import satpass
+import swotpass.satpass as satpass
 import numpy as np
 
 geod = Geod(ellps="WGS84") 
