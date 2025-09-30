@@ -163,8 +163,15 @@ def extract_closest_swot_pass(satpass_swot, t, valid_passes):
     
     return shorter_pass.track, int(float(shorter_pass.cycle)), shorter_pass.time
     
-def associate_swot_passage_parallel(x, y, t, satpass, mission='sw', n_passes=1, parallel = True):
+def associate_swot_passage_parallel(x, y, t, mission='sw', n_passes=1, verbose = True, parallel = True):
     from joblib import Parallel, delayed
+
+
+    x, y, t = np.hstack([x]), np.hstack([y]), np.hstack([t])
+
+    #### Mooring situation
+    if (len(x) == 1)&(len(t)>1):
+        x, y = np.repeat(x, len(t)), np.repeat(y, len(t))
     
     t = pd.DatetimeIndex(t)
 
@@ -180,6 +187,18 @@ def associate_swot_passage_parallel(x, y, t, satpass, mission='sw', n_passes=1, 
     swot_passes = satpass.sat_pass(sw, date_range, domain)
 
     swot_pass, swot_cycle, swot_time = [], [], []
+
+    # Attempt to import tqdm for progress tracking
+    try:
+        if verbose:
+            from tqdm import tqdm
+            iterator = tqdm(zip(x, y, t), total=len(x))
+        else:
+            iterator = zip(x, y, t)
+    except ImportError:
+        print("TQDM library not available. Running without progress bar.")
+        verbose = False
+        iterator = zip(x, y, t)
 
     print('Identify and associate closest SWOT passes [passage, cycle, and time] to each x, y, t')
 
@@ -202,7 +221,7 @@ def associate_swot_passage_parallel(x, y, t, satpass, mission='sw', n_passes=1, 
         return np.vstack(closest_passes).T
 
     if parallel:
-        results = Parallel(n_jobs=-1)(delayed(process_subset)(xx, yy, tt) for xx, yy, tt in tqdm(zip(x, y, t), total=len(x)))
+        results = Parallel(n_jobs=-1)(delayed(process_subset)(xx, yy, tt) for xx, yy, tt in iterator)
     
     else:
         results = []
@@ -235,5 +254,12 @@ def associate_swot_passage_parallel(x, y, t, satpass, mission='sw', n_passes=1, 
         result.loc[:, f'swot_pass_{i+1}'] = swot_passes[i]
         result.loc[:, f'swot_cycle_{i+1}'] = swot_cycles[i]
         result.loc[:, f'dis2nadir_{i+1}'] = dis2nadir[i]
+
+
+    if n_passes == 1:
+        result = result.rename(
+            columns={col: col[:-2] for col in result.columns if col.endswith('_1')}
+        )
+
 
     return result
