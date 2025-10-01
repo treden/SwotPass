@@ -3,7 +3,7 @@ import pandas as pd
 from pyproj import Geod
 from shapely.geometry import LineString, Point
 from shapely.ops import nearest_points
-# from scipy.interpolate import griddata
+from scipy.interpolate import griddata
 
 import swotpass.satpass as satpass
 import numpy as np
@@ -48,7 +48,7 @@ def remove_incomplete_subcycles(df):
     df = df.set_index(['direction', 'cycle', 'subcycle']).drop(combinations_to_remove).reset_index()
     return df
 
-def construct_index_swot(satpass_swot, SWOT_files):
+def assign_filepath(satpass_swot, SWOT_files):
 
     filepath_swot = []
     
@@ -67,71 +67,11 @@ def construct_index_swot(satpass_swot, SWOT_files):
     filepath_swot.index = filepath_swot.index.round('60S')
 
     df_swot = pd.merge(satpass_swot, filepath_swot, how = 'left')
-    df_swot = df_swot.sort_values('time')
-    # df_swot = remove_incomplete_subcycles(df_swot)
-    index, _ = pd.factorize(df_swot['direction'].astype(str) + df_swot['cycle'].astype(str) + df_swot['subcycle'].astype(str))
-    df_swot.index = index
-    df_swot = df_swot.dropna()
+    df_swot = df_swot.sort_values('t_swot')
+
+    df_swot.index = pd.DatetimeIndex(df_swot.t_swot)
+
     return df_swot
-
-def associate_swot_passage(x, y, t, mission = 'sw', verbose = True):
-
-
-    t = pd.DatetimeIndex(t)
-
-    date_range = [t.min() - pd.Timedelta(days = 3), t.max() + pd.Timedelta(days = 3)]
-    domain = [x.min() -1,x.max()+1,y.min() -1,y.max()+1]
-
-    sw = satpass.NominalTrack(mission=mission)
-    swot_passes_in_area = sw.select_in_area(domain)
-    
-    valid_tracks = np.unique(swot_passes_in_area.track)[(swot_passes_in_area.groupby('track').count().lat > 1).values]
-    
-    swot_passes_in_area = swot_passes_in_area[swot_passes_in_area['track'].isin(valid_tracks)]
-    swot_passes = satpass.sat_pass(sw, date_range, domain)
-
-    # print(len(np.unique(swot_passes.track)))
-    # print(len(np.unique(swot_passes_in_area.track)))
-
-    swot_pass, swot_cycle, swot_time = [], [], []
-
-    # Attempt to import tqdm for progress tracking
-    try:
-        if verbose:
-            from tqdm import tqdm
-            iterator = tqdm(zip(x, y, t), total=len(x))
-        else:
-            iterator = zip(x, y, t)
-    except ImportError:
-        print("TQDM library not available. Running without progress bar.")
-        verbose = False
-        iterator = zip(x, y, t)
-
-    # Wrap the loop with tqdm to display the progress bar
-    print('Identify and associate closest SWOT passes [passage, cycle and time] to each x, y, t')
-    for xx, yy, tt in iterator:
-        valid_ids = identify_close_swot_passes((xx, yy), swot_passes_in_area, max_distance_from_nadir=60e3)
-        cl_pass, cl_cycle, cl_time = extract_closest_swot_pass(swot_passes, tt, valid_ids)
-        
-        swot_pass.append(cl_pass)
-        swot_cycle.append(cl_cycle)
-        swot_time.append(cl_time)
-
-    swot_time = pd.DatetimeIndex(swot_time)
-    swot_dt = (t - swot_time).total_seconds().values.astype(float)/86400
-
-    result = np.array([x, y]).T
-    result = pd.DataFrame(result, columns = ['x', 'y'])
-    
-    result.loc[:, 't'] = t
-    result.loc[:, 't_swot'] = swot_time
-    
-    result.loc[:, 'swot_dt'] = swot_dt
-    result.loc[:, 'swot_pass'] = swot_pass
-    result.loc[:, 'swot_cycle'] = swot_cycle
-
-    return result
-
 
 def identify_close_swot_passes(xy_point, tracks_swot, max_distance_from_nadir = 60e3):
     point = Point(xy_point[0],xy_point[1])
@@ -162,10 +102,35 @@ def extract_closest_swot_pass(satpass_swot, t, valid_passes):
     shorter_pass = nearest_passes.loc[(np.abs(t - nearest_passes.time)).idxmin()]
     
     return shorter_pass.track, int(float(shorter_pass.cycle)), shorter_pass.time
-    
-def associate_swot_passage_parallel(x, y, t, mission='sw', n_passes=1, verbose = True, parallel = True):
-    from joblib import Parallel, delayed
 
+def associate_swot_passage_xy(x, y, date_range, mission='sw'):
+
+    domain = [x - 1, x + 1, y - 1, y + 1]
+
+    sw = satpass.NominalTrack(mission=mission)
+    swot_passes_in_area = sw.select_in_area(domain)
+    valid_tracks = np.unique(swot_passes_in_area.track)[(swot_passes_in_area.groupby('track').count().lat > 1).values]
+
+    swot_passes_in_area = swot_passes_in_area[swot_passes_in_area['track'].isin(valid_tracks)]
+    swot_passes = satpass.sat_pass(sw, date_range, domain)
+
+    print('Identify and associate closest SWOT passes at position x, y [passage, cycle, and time] during the given period')
+
+    valid_passes, dis2nadir = identify_overlapping_swot_passes([x, y], swot_passes_in_area, max_distance_from_nadir=65e3)
+
+    swot_passes = swot_passes[swot_passes["track"].isin(valid_passes)]
+    # swot_passes['dis2nadir'] = dis2nadir
+    
+    track2dist = dict(zip(valid_tracks, np.array(dis2nadir)/1e3))
+    swot_passes['dis2nadir'] = swot_passes['track'].map(track2dist)
+
+    swot_passes['x'] = x
+    swot_passes['y'] = y
+
+    return swot_passes.rename(columns = dict(time = 't_swot'))
+
+def associate_swot_passage_xyt(x, y, t, mission='sw', n_passes=1, verbose = True, parallel = True):
+    from joblib import Parallel, delayed
 
     x, y, t = np.hstack([x]), np.hstack([y]), np.hstack([t])
 
@@ -185,8 +150,6 @@ def associate_swot_passage_parallel(x, y, t, mission='sw', n_passes=1, verbose =
     
     swot_passes_in_area = swot_passes_in_area[swot_passes_in_area['track'].isin(valid_tracks)]
     swot_passes = satpass.sat_pass(sw, date_range, domain)
-
-    swot_pass, swot_cycle, swot_time = [], [], []
 
     # Attempt to import tqdm for progress tracking
     try:
@@ -228,12 +191,10 @@ def associate_swot_passage_parallel(x, y, t, mission='sw', n_passes=1, verbose =
         for xx, yy, tt in tqdm(zip(x, y, t), total=len(x)):
             results.append(process_subset(xx, yy, tt))
             
-
     result = np.array([x, y]).T
     result = pd.DataFrame(result, columns = ['x', 'y'])
     result.loc[:, 't'] = pd.DatetimeIndex(t)
     
-
     swot_passes = [[] for _ in range(n_passes)]
     swot_cycles = [[] for _ in range(n_passes)]
     swot_times = [[] for _ in range(n_passes)]
@@ -250,16 +211,117 @@ def associate_swot_passage_parallel(x, y, t, mission='sw', n_passes=1, verbose =
 
     for i in range(n_passes):
         result.loc[:, f't_swot_{i+1}'] = swot_times[i]
-        result.loc[:, f'swot_dt_{i+1}'] = swot_dts[i]
-        result.loc[:, f'swot_pass_{i+1}'] = swot_passes[i]
-        result.loc[:, f'swot_cycle_{i+1}'] = swot_cycles[i]
+        result.loc[:, f'dt_swot_{i+1}'] = swot_dts[i]
+        result.loc[:, f'track_{i+1}'] = swot_passes[i]
+        result.loc[:, f'cycle_{i+1}'] = swot_cycles[i]
         result.loc[:, f'dis2nadir_{i+1}'] = dis2nadir[i]
-
 
     if n_passes == 1:
         result = result.rename(
             columns={col: col[:-2] for col in result.columns if col.endswith('_1')}
         )
 
-
     return result
+
+def read_and_preprocess_SWOT(ds, swot_var_names = dict(ssha = 'ssha_unfiltered', mdt = 'mdt'), kwargs_diagnosis = dict(compute_diagnosis = False, derivative = 'fit', n = 5, verbose = False)):
+    kwargs_diagnosis = kwargs_diagnosis.copy()
+
+    ssha = ds[swot_var_names['ssha']]
+    ssh = ssha + ds[swot_var_names['mdt']]
+
+    compute_diagnosis = kwargs_diagnosis.pop('compute_diagnosis', False)
+    SwotDiag = kwargs_diagnosis.pop('SwotDiag', None)
+
+    for k, var in swot_var_names.items():
+        ds = ds.rename({var:k})
+
+    ds = ds.assign(ssh = ssh)
+
+    if compute_diagnosis:
+
+        diag = SwotDiag.diagnosis.compute_ocean_diagnostics_from_eta(ssh, ssh.longitude, ssh.latitude, **kwargs_diagnosis)
+        for k, d in diag.items():
+            ds = ds.assign(**{k : (ssh.dims, d)})
+    
+    return ds
+
+def interpolate_swot_passages(swot_table, interp_vars = ['ssha'], swot_var_names = dict(ssha = 'ssha_unfiltered', mdt = 'mdt'), parallel = True, n_jobs = -1,
+                              kwargs_diagnosis = dict(compute_diagnosis = False, derivative = 'fit', n_stencil = 5, verbose = False, SwotDiag = None)):
+
+    results = []
+    print(f'Interpolating SWOT {interp_vars} field on each location')
+    
+    def process_subset(index, group):
+        file = swot_table.filepath[(swot_table.track == index[0])&(swot_table.cycle == index[1])].values
+        # print(file)
+        if np.any(file):
+            try:
+                ds = xr.open_dataset(file[0])
+                ind = np.any((ds.latitude < group.y.max() +1)&(ds.latitude > group.y.min() -1), axis = 1)
+                ds = ds.sel(num_lines = ind)
+                interp = interpolate_swot(ds, group.x, group.y, interp_vars=interp_vars, swot_var_names = swot_var_names, kwargs_diagnosis=kwargs_diagnosis)
+                interp.index = group.index
+                ds.close()
+                del ds
+            except Exception as e:
+                # Handle the error
+                print("An error occurred while processing the file for pass", index[0], 'cycle', index[1], ":", e, "Skipping the file.")
+                interp = pd.DataFrame(np.ones((len(group.x), len(interp_vars))) * np.nan, index=group.index, columns=interp_vars)
+ 
+        else:
+            interp = pd.DataFrame(np.ones((len(group.x), len(interp_vars)))*np.nan, index = group.index, columns = interp_vars)
+
+        return interp#pd.concat([group, interp], axis = 1)
+
+
+    # Attempt to import tqdm for progress tracking
+    try:
+        from tqdm import tqdm
+        iterator = tqdm(swot_table.groupby(['track', 'cycle']), total=len(swot_table.groupby(['track', 'cycle'])))
+
+    except ImportError:
+        print("TQDM library not available. Running without progress bar.")
+        iterator = swot_table.groupby(['track', 'cycle'])
+
+    if parallel:
+        try:
+            from joblib import Parallel, delayed
+        except ImportError:
+            print("joblib library not available. Running without serialization.")
+            parallel = False
+
+    if parallel:
+        results = Parallel(n_jobs=n_jobs)(delayed(process_subset)(index, group) for index, group in iterator)
+    
+    else:
+        for index, group in iterator:
+            results.append(process_subset(index, group))
+        
+    return pd.concat([swot_table, pd.concat(results).sort_index()], axis = 1)#.rename(columns = dict(t_swot_1 = 't_swot', swot_dt_1 = 'swot_dt', swot_pass_1 = 'swot_pass', swot_cycle_1 = 'swot_cycle', dis2nadir_1 = 'dis2nadir'))
+
+
+def interpolate_swot(ds, x, y, interp_vars = ['ssha'], swot_var_names = dict(ssha = 'ssha_unfiltered', mdt = 'mdt'), 
+                     kwargs_diagnosis = dict(compute_diagnosis = False, derivative = 'fit', n_stencil = 5, verbose = False)):
+
+    var = np.hstack([interp_vars])
+
+    interp = {}
+
+    ds = ds.where((ds.latitude<y.max() + 0.5)&(ds.latitude>y.min() - 0.5))
+    ds = read_and_preprocess_SWOT(ds, swot_var_names = swot_var_names, kwargs_diagnosis = kwargs_diagnosis)
+
+    vars = {v : ds[v] for v in var}
+            
+    #     vars['zeta'] = ds.zeta
+
+    xy_from = np.array([np.ravel(ds.longitude), np.ravel(ds.latitude)]).T
+    xy_to = np.array([x, y]).T
+    for k, v in vars.items():    
+        v = np.ravel(v)    
+        interp[k] = griddata(xy_from, v, xy_to)
+    interp = pd.DataFrame(interp)
+
+    ds.close()
+    del ds
+
+    return interp
